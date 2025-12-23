@@ -38,7 +38,7 @@ model grn {
   status          String?          @db.VarChar(20)
   created_by      Int?
   created_at      DateTime?        @default(now()) @db.Timestamp(6)
-  users           users?           @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users           users?           @relation("grn_created_by", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   purchase_orders purchase_orders? @relation(fields: [po_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   vendors         vendors?         @relation(fields: [vendor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   warehouses      warehouses?      @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -111,7 +111,7 @@ model invoices {
   created_by           Int?
   created_at           DateTime?        @default(now()) @db.Timestamp(6)
   invoice_items        invoice_items[]
-  users                users?           @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users                users?           @relation("invoice_created_by", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   customers            customers?       @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   sales_orders         sales_orders?    @relation(fields: [so_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   warehouses           warehouses?      @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -198,7 +198,7 @@ model purchase_orders {
   updated_at           DateTime?              @default(now()) @db.Timestamp(6)
   grn                  grn[]
   purchase_order_items purchase_order_items[]
-  users                users?                 @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users                users?                 @relation("po_created_by", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   vendors              vendors?               @relation(fields: [vendor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   warehouses           warehouses?            @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
@@ -237,7 +237,7 @@ model sales_orders {
   updated_at        DateTime?           @default(now()) @db.Timestamp(6)
   invoices          invoices[]
   sales_order_items sales_order_items[]
-  users             users?              @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users             users?              @relation("so_created_by", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
   customers         customers?          @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   warehouses        warehouses?         @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
@@ -274,21 +274,35 @@ model transport {
 }
 
 model users {
-  id              Int               @id @default(autoincrement())
-  name            String            @db.VarChar(120)
-  email           String            @unique @db.VarChar(120)
-  password_hash   String?
-  google_id       String?           @db.VarChar(255)
-  phone           String?           @db.VarChar(20)
-  role_id         Int?
-  is_active       Boolean?          @default(true)
-  created_at      DateTime?         @default(now()) @db.Timestamp(6)
-  updated_at      DateTime?         @default(now()) @db.Timestamp(6)
-  grn             grn[]
-  invoices        invoices[]
-  purchase_orders purchase_orders[]
-  sales_orders    sales_orders[]
-  roles           roles?            @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id Int @id @default(autoincrement())
+
+  name  String @db.VarChar(120)
+  email String @unique @db.VarChar(120)
+
+  // Auth fields
+  password_hash String?
+  google_id     String? @unique @db.VarChar(255)
+
+  // ERP fields
+  phone     String? @db.VarChar(20)
+  role_id   Int
+  is_active Boolean @default(true)
+
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  updated_at DateTime @updatedAt @db.Timestamp(6)
+
+  // Role relation
+  roles roles @relation(fields: [role_id], references: [id])
+
+  // ERP relations (audit trail)
+  grn             grn[]             @relation("grn_created_by")
+  invoices        invoices[]        @relation("invoice_created_by")
+  purchase_orders purchase_orders[] @relation("po_created_by")
+  sales_orders    sales_orders[]    @relation("so_created_by")
+
+  // Auth.js relations
+  accounts Account[]
+  sessions Session[]
 }
 
 model vendors {
@@ -338,4 +352,41 @@ model warranty_cards {
   customers      customers? @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   invoices       invoices?  @relation(fields: [invoice_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   products       products?  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+//Prisma Models (Auth Tables)
+
+model Account {
+  id                Int     @id @default(autoincrement())
+  userId            Int
+  type              String
+  provider          String
+  providerAccountId String
+  access_token      String?
+  refresh_token     String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           Int      @id @default(autoincrement())
+  sessionToken String   @unique
+  userId       Int
+  expires      DateTime
+
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
 }
