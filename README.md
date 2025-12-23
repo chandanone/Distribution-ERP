@@ -1,36 +1,115 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# STEP 1 — Create Next.js Project (App Router)
+```
+npx create-next-app@latest pump-erp
+cd pump-erp
 
-## Getting Started
+```
+# STEP 2 — Install Core Dependencies
 
-First, run the development server:
+```
+npm install prisma @prisma/client
+npm install next-auth bcrypt
+npm install zod
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+# STEP 3 — Setup Prisma with PostgreSQL
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+npx prisma init
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Learn More
+```
+# Update .env:
+```
+DATABASE_URL="postgresql://user:password@localhost:5432/erp_db"
 
-To learn more about Next.js, take a look at the following resources:
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# prisma steps - prisma -7.2.0
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+# Install Prisma CLI
+npm install prisma --save-dev
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# Install Prisma Client
+npm install @prisma/client
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+For Prisma in Next.js, it is highly recommended to use the Pooled connection
+
+```
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+```
+======
+Sync Schema with Neon (The "Pull" Step)
+
+Since you already have 15 tables, do not write the models manually. Run the pull command to populate your schema.prisma
+```
+npx prisma db pull
+```
+
+Prisma 7 will detect the variable and connect to Neon automatically.
+auto create schema for tables in neon db
+
+```
+npx prisma generate
+```
+
+Setup the Prisma Singleton (lib/db.ts)
+
+In Next.js, the "Hot Reload" feature can create hundreds of database connections, crashing your Neon free tier.
+ Use this singleton pattern to keep it to one connection.
+
+lib/db.ts
+```
+import { PrismaClient } from "@prisma/client";
+
+const globalForPrisma = global as unknown as {
+  prisma?: PrismaClient;
+};
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient();
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
+}
+```
+=======
+add neon adapter
+
+Prisma no longer bundles the heavy Rust binary. Instead, it requires you to provide a Driver Adapter 
+(like the Neon serverless driver) to handle the actual database connection.
+```
+npm install @prisma/adapter-neon @neondatabase/serverless
+
+import { PrismaClient } from "@prisma/client";
+import { PrismaNeon } from "@prisma/adapter-neon";
+
+const globalForPrisma = global as unknown as {
+  prisma?: PrismaClient;
+};
+
+// 1. Get your connection string
+const connectionString = process.env.DATABASE_URL!;
+
+// 2. Pass the config object directly (DO NOT create a new Pool)
+const adapter = new PrismaNeon({ connectionString });
+
+// 3. Initialize the Client
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    adapter,
+    log: ["query"],
+  });
+
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+```
