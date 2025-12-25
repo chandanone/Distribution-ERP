@@ -299,6 +299,7 @@ model users {
   invoices        invoices[]        @relation("invoice_created_by")
   purchase_orders purchase_orders[] @relation("po_created_by")
   sales_orders    sales_orders[]    @relation("so_created_by")
+  audit_logs      audit_logs[]      @relation("UserAuditLogs")
 
   // Auth.js relations
   accounts Account[]
@@ -389,4 +390,21 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+
+//audit log
+model audit_logs {
+  id          Int      @id @default(autoincrement())
+  user_id     Int?
+  action      String   @db.VarChar(50)
+  entity      String   @db.VarChar(50)
+  entity_id   Int?
+  old_data    Json?
+  new_data    Json?
+  ip_address  String?  @db.VarChar(45)
+  user_agent  String?
+  created_at  DateTime @default(now())
+
+  users users? @relation("UserAuditLogs", fields: [user_id], references: [id])
 }
